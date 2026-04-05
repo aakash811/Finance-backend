@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
-import { pool } from '../config/database';
-import { logger } from '../utils/logger';
+import { pool } from '../src/config/database';
+import { logger } from '../src/utils/logger';
 
 const seed = async () => {
   const password = await bcrypt.hash('Admin@123', 10);
