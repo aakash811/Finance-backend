@@ -1,0 +1,521 @@
+openapi: 3.0.3
+info:
+  title: Finance Dashboard API
+  description: |
+    Backend API for a finance dashboard system with role-based access control.
+
+    ## Roles
+    | Role     | Permissions |
+    |----------|-------------|
+    | VIEWER   | View records, view dashboard summary & recent activity |
+    | ANALYST  | All VIEWER permissions + category totals, trends, top categories |
+    | ADMIN    | Full access — create/update/delete records and manage users |
+
+    ## Authentication
+    All protected routes require a `Bearer <token>` header obtained from `/auth/login`.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Records
+  - name: Dashboard
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ApiResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:       { type: integer }
+        limit:      { type: integer }
+        total:      { type: integer }
+        totalPages: { type: integer }
+
+    ValidationError:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string, example: Validation failed }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:   { type: string }
+              message: { type: string }
+
+    User:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        email:      { type: string, format: email }
+        name:       { type: string }
+        role:       { type: string, enum: [VIEWER, ANALYST, ADMIN] }
+        status:     { type: string, enum: [ACTIVE, INACTIVE] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    FinancialRecord:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        amount:     { type: string, example: "1500.00" }
+        type:       { type: string, enum: [INCOME, EXPENSE] }
+        category:   { type: string }
+        date:       { type: string, format: date-time }
+        notes:      { type: string, nullable: true }
+        user_id:    { type: string, format: uuid }
+        user_name:  { type: string }
+        user_email: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    DashboardSummary:
+      type: object
+      properties:
+        totalIncome:  { type: number }
+        totalExpense: { type: number }
+        netBalance:   { type: number }
+        recordCount:  { type: integer }
+        incomeCount:  { type: integer }
+        expenseCount: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponse'
+    ValidationError:
+      description: Input validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user (VIEWER role by default)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:     { type: string, example: Jane Doe }
+                email:    { type: string, example: jane@example.com }
+                password: { type: string, example: Secret@123 }
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user:         { $ref: '#/components/schemas/User' }
+                      accessToken:  { type: string }
+                      refreshToken: { type: string }
+        '409': { description: Email already registered }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, example: admin@finance.com }
+                password: { type: string, example: Admin@123 }
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user:         { $ref: '#/components/schemas/User' }
+                      accessToken:  { type: string }
+                      refreshToken: { type: string }
+        '401': { description: Invalid credentials }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New tokens issued }
+        '401': { description: Invalid or expired refresh token }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (invalidates refresh token)
+      responses:
+        '200': { description: Logged out }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user
+      responses:
+        '200': { description: Current user payload }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List all users — ADMIN only
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: role
+          schema: { type: string, enum: [VIEWER, ANALYST, ADMIN] }
+        - in: query
+          name: status
+          schema: { type: string, enum: [ACTIVE, INACTIVE] }
+        - in: query
+          name: search
+          schema: { type: string }
+      responses:
+        '200':
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+    post:
+      tags: [Users]
+      summary: Create a user — ADMIN only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:     { type: string }
+                email:    { type: string }
+                password: { type: string }
+                role:     { type: string, enum: [VIEWER, ANALYST, ADMIN], default: VIEWER }
+      responses:
+        '201': { description: User created }
+        '409': { description: Email already exists }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user by ID — ADMIN only
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: User found }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      tags: [Users]
+      summary: Update user — ADMIN only
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:   { type: string }
+                role:   { type: string, enum: [VIEWER, ANALYST, ADMIN] }
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses:
+        '200': { description: User updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    delete:
+      tags: [Users]
+      summary: Soft delete user — ADMIN only
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: User deleted }
+        '400': { description: Cannot delete own account }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /records:
+    get:
+      tags: [Records]
+      summary: List financial records — all roles (scoped by ownership for non-admins)
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: type
+          schema: { type: string, enum: [INCOME, EXPENSE] }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: startDate
+          schema: { type: string, format: date-time }
+        - in: query
+          name: endDate
+          schema: { type: string, format: date-time }
+        - in: query
+          name: minAmount
+          schema: { type: number }
+        - in: query
+          name: maxAmount
+          schema: { type: number }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: [date, amount, created_at], default: date }
+        - in: query
+          name: sortOrder
+          schema: { type: string, enum: [asc, desc], default: desc }
+      responses:
+        '200':
+          description: Paginated records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FinancialRecord' }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+    post:
+      tags: [Records]
+      summary: Create a financial record — ADMIN only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, type, category, date]
+              properties:
+                amount:   { type: number, example: 1500.00 }
+                type:     { type: string, enum: [INCOME, EXPENSE] }
+                category: { type: string, example: Salary }
+                date:     { type: string, format: date-time }
+                notes:    { type: string }
+      responses:
+        '201': { description: Record created }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /records/{id}:
+    get:
+      tags: [Records]
+      summary: Get a record by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Record found }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      tags: [Records]
+      summary: Update a record — ADMIN only
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:   { type: number }
+                type:     { type: string, enum: [INCOME, EXPENSE] }
+                category: { type: string }
+                date:     { type: string, format: date-time }
+                notes:    { type: string, nullable: true }
+      responses:
+        '200': { description: Record updated }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    delete:
+      tags: [Records]
+      summary: Soft delete a record — ADMIN only
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Record deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Overall financial summary — all roles
+      responses:
+        '200':
+          description: Summary data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: '#/components/schemas/DashboardSummary' }
+
+  /dashboard/recent-activity:
+    get:
+      tags: [Dashboard]
+      summary: Recent transactions — all roles
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+      responses:
+        '200': { description: Recent records }
+
+  /dashboard/categories:
+    get:
+      tags: [Dashboard]
+      summary: Category-wise totals — ANALYST and ADMIN
+      responses:
+        '200': { description: Category breakdown }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /dashboard/trends/monthly:
+    get:
+      tags: [Dashboard]
+      summary: Monthly income/expense trends — ANALYST and ADMIN
+      parameters:
+        - in: query
+          name: months
+          schema: { type: integer, default: 12 }
+      responses:
+        '200': { description: Monthly trend data }
+
+  /dashboard/trends/weekly:
+    get:
+      tags: [Dashboard]
+      summary: Weekly income/expense trends — ANALYST and ADMIN
+      parameters:
+        - in: query
+          name: weeks
+          schema: { type: integer, default: 8 }
+      responses:
+        '200': { description: Weekly trend data }
+
+  /dashboard/top-categories:
+    get:
+      tags: [Dashboard]
+      summary: Top expense categories with percentages — ANALYST and ADMIN
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 5 }
+      responses:
+        '200': { description: Top categories }
