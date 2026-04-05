@@ -3,7 +3,7 @@ import { dashboardController } from './dashboard.controller';
 import { authenticate } from '../../middleware/auth.middleware';
 import { requireAnalyst, requireViewer } from '../../middleware/role.middleware';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authenticate);
 

@@ -5,7 +5,7 @@ import { authenticate } from '../../middleware/auth.middleware';
 import { authRateLimiter } from '../../middleware/rateLimiter.middleware';
 import { registerSchema, loginSchema, refreshSchema } from './auth.schemas';
 
-const router = Router();
+const router: Router = Router();
 
 router.post('/register', authRateLimiter, validate(registerSchema), authController.register);
 router.post('/login',    authRateLimiter, validate(loginSchema),    authController.login);

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Application } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -12,7 +12,7 @@ import usersRoutes     from './modules/users/users.routes';
 import recordsRoutes   from './modules/records/records.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 
-const app = express();
+const app: Application = express();
 
 // Security & parsing
 app.use(helmet());

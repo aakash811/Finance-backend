@@ -5,7 +5,7 @@ import { requireAdmin, requireViewer } from '../../middleware/role.middleware';
 import { validate } from '../../middleware/validate.middleware';
 import { createRecordSchema, updateRecordSchema, recordIdSchema, listRecordsSchema } from './records.schemas';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authenticate);
 
